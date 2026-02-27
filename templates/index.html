@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>visimo.ai — Real-Time Facial Emotion Detection</title>
+    <meta name="description"
+        content="AI-powered real-time facial emotion detection with vulnerability safeguards. Built with TensorFlow and trained on FER2013.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <!-- ===== LANDING PAGE ===== -->
+    <section id="landing" class="page active">
+        <div class="particles" id="particles"></div>
+        <nav class="navbar">
+            <div class="logo">
+                <span class="logo-icon">🧠</span>
+                <span class="logo-text">visimo.ai</span>
+            </div>
+            <div class="nav-links">
+                <a href="#" onclick="showPage('landing')">Home</a>
+                <a href="#" onclick="showPage('about')">About</a>
+                <a href="#" onclick="showPage('detect')">Detect</a>
+            </div>
+        </nav>
+
+        <div class="hero">
+            <div class="hero-badge">🔬 Powered by Deep Learning</div>
+            <h1>Real-Time <span class="gradient-text">Facial Emotion</span> Detection</h1>
+            <p class="hero-subtitle">
+                AI-powered emotion analysis with vulnerability safeguards.
+                Trained on 28,000+ facial images using advanced convolutional neural networks.
+            </p>
+            <div class="hero-buttons">
+                <button class="btn-primary" onclick="showPage('detect')">
+                    <span class="btn-icon">📷</span> Start Detection
+                </button>
+                <button class="btn-secondary" onclick="showPage('about')">
+                    <span class="btn-icon">ℹ️</span> Learn More
+                </button>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎭</div>
+                    <h3>7 Emotions</h3>
+                    <p>Detects Anger, Disgust, Fear, Happy, Sad, Surprise & Neutral in real-time</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Privacy First</h3>
+                    <p>No data stored, no cloud uploads. Everything runs locally on your device</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Real-Time</h3>
+                    <p>Live webcam analysis with instant predictions and quality assessment</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧬</div>
+                    <h3>Trained Model</h3>
+                    <p>Custom CNN trained on FER2013 dataset with 28,709 facial images</p>
+                </div>
+            </div>
+
+            <!-- QR Code Section for Mobile -->
+            <div class="qr-section" style="animation: fadeInUp 0.6s ease-out 0.5s both;">
+                <div class="qr-card glass-panel">
+                    <h3>📱 Try on Mobile</h3>
+                    <p>Scan this QR code with your phone to detect emotions using your mobile camera</p>
+                    <div class="qr-image-wrapper">
+                        <img src="/qrcode.png" alt="QR Code" class="qr-image">
+                    </div>
+                    <div class="qr-url">{{ app_url }}</div>
+                    <p class="qr-note">🌍 Works from anywhere — no same WiFi needed!</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section id="detect" class="page">
+        <nav class="navbar">
+            <div class="logo" onclick="showPage('landing')" style="cursor:pointer">
+                <span class="logo-icon">🧠</span>
+                <span class="logo-text">visimo.ai</span>
+            </div>
+            <div class="nav-links">
+                <a href="#" onclick="showPage('landing')">Home</a>
+                <a href="#" onclick="showPage('about')">About</a>
+                <a href="#" class="active" onclick="showPage('detect')">Detect</a>
+            </div>
+        </nav>
+
+        <!-- Consent overlay -->
+        <div id="consent-overlay" class="consent-overlay">
+            <div class="consent-card">
+                <div class="consent-icon">🔒</div>
+                <h2>Privacy Notice</h2>
+                <div class="consent-text">
+                    <p>This system uses your camera to analyze facial expressions in real-time.</p>
+                    <ul>
+                        <li>✅ No images or video are saved</li>
+                        <li>✅ No data is sent to any server (runs locally)</li>
+                        <li>✅ All processing happens on your device</li>
+                        <li>⚠️ Predictions are estimates, not definitive</li>
+                    </ul>
+                </div>
+                <div class="consent-buttons">
+                    <button class="btn-primary" onclick="acceptConsent()">Accept & Start Camera</button>
+                    <button class="btn-secondary" onclick="showPage('landing')">Decline</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detection UI -->
+        <div id="detect-ui" class="detect-container" style="display:none">
+            <div class="detect-grid">
+                <!-- Left: Emotion Sidebar -->
+                <div class="emotion-panel glass-panel">
+                    <h3 class="panel-title">Emotion Analysis</h3>
+                    <div id="emotion-bars"></div>
+                    <div class="dominant-emotion" id="dominant-display">
+                        <span class="dominant-label">Dominant:</span>
+                        <span class="dominant-value" id="dominant-text">Waiting...</span>
+                    </div>
+                </div>
+
+                <!-- Center: Video Feed -->
+                <div class="video-container">
+                    <div class="live-badge" id="live-badge">
+                        <span class="live-dot"></span> LIVE — No Data Stored
+                    </div>
+                    <div class="video-wrapper">
+                        <video id="webcam" autoplay playsinline muted></video>
+                        <canvas id="overlay" class="video-overlay"></canvas>
+                    </div>
+                    <div class="video-controls">
+                        <button class="btn-control" id="btn-toggle" onclick="toggleCamera()">
+                            ⏸️ Pause
+                        </button>
+                        <div class="disclaimer">
+                            Predictions are estimates only. Accuracy varies across demographics & conditions.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Quality Panel -->
+                <div class="quality-panel glass-panel">
+                    <h3 class="panel-title">System Status</h3>
+                    <div class="status-row">
+                        <span class="status-label">Quality</span>
+                        <span class="status-value" id="quality-score">—</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Confidence</span>
+                        <span class="status-value" id="confidence-display">—</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Face</span>
+                        <span class="status-value" id="face-status">No face</span>
+                    </div>
+                    <div class="warnings-section">
+                        <h4>Warnings</h4>
+                        <div id="warnings-list" class="warnings-list">
+                            <span class="no-warning">No warnings</span>
+                        </div>
+                    </div>
+                    <div class="model-info">
+                        <h4>Model Info</h4>
+                        <div class="info-item">Dataset: FER2013</div>
+                        <div class="info-item">Images: 28,709</div>
+                        <div class="info-item">Classes: 7 emotions</div>
+                        <div class="info-item">Type: CNN + BatchNorm</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== ABOUT PAGE ===== -->
+    <section id="about" class="page">
+        <nav class="navbar">
+            <div class="logo" onclick="showPage('landing')" style="cursor:pointer">
+                <span class="logo-icon">🧠</span>
+                <span class="logo-text">visimo.ai</span>
+            </div>
+            <div class="nav-links">
+                <a href="#" onclick="showPage('landing')">Home</a>
+                <a href="#" class="active" onclick="showPage('about')">About</a>
+                <a href="#" onclick="showPage('detect')">Detect</a>
+            </div>
+        </nav>
+
+        <div class="about-content">
+            <h1>About <span class="gradient-text">visimo.ai</span></h1>
+            <p class="about-subtitle">Understanding the technology behind facial emotion detection</p>
+
+            <div class="about-grid">
+                <div class="about-card glass-panel">
+                    <h3>🧠 How It Works</h3>
+                    <ol>
+                        <li>Your webcam captures live video frames</li>
+                        <li>Face detection locates your face (Haar Cascade)</li>
+                        <li>The face region is preprocessed (CLAHE, resize, normalize)</li>
+                        <li>A CNN processes the face and outputs 7 emotion probabilities</li>
+                        <li>Results are displayed in real-time with confidence scores</li>
+                    </ol>
+                </div>
+
+                <div class="about-card glass-panel">
+                    <h3>🛡️ Vulnerability Safeguards</h3>
+                    <ul>
+                        <li><strong>Privacy</strong>: Consent screen, no data stored, local processing</li>
+                        <li><strong>Bias Awareness</strong>: Confidence caps, disclaimers about limitations</li>
+                        <li><strong>Quality Checks</strong>: Lighting, blur, and distance monitoring</li>
+                        <li><strong>Transparency</strong>: All emotion scores shown, not just the top one</li>
+                    </ul>
+                </div>
+
+                <div class="about-card glass-panel">
+                    <h3>📊 Model Architecture</h3>
+                    <ul>
+                        <li><strong>Type</strong>: Convolutional Neural Network (CNN)</li>
+                        <li><strong>Layers</strong>: 3 Conv blocks + BatchNorm + Dropout</li>
+                        <li><strong>Parameters</strong>: 739,303</li>
+                        <li><strong>Input</strong>: 48×48 grayscale images</li>
+                        <li><strong>Training</strong>: FER2013 (28,709 images), 30 epochs</li>
+                        <li><strong>Augmentation</strong>: Rotation, flip, zoom, shift</li>
+                    </ul>
+                </div>
+
+                <div class="about-card glass-panel">
+                    <h3>🎭 Emotions Detected</h3>
+                    <div class="emotion-list-about">
+                        <span class="emo-tag" style="--c:#FF4444">😠 Angry</span>
+                        <span class="emo-tag" style="--c:#00B400">🤢 Disgust</span>
+                        <span class="emo-tag" style="--c:#3278C8">😨 Fear</span>
+                        <span class="emo-tag" style="--c:#00E678">😊 Happy</span>
+                        <span class="emo-tag" style="--c:#FF6432">😢 Sad</span>
+                        <span class="emo-tag" style="--c:#00DCFF">😮 Surprise</span>
+                        <span class="emo-tag" style="--c:#E6C832">😐 Neutral</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="about-footer">
+                <p>Built for Hackathon 2026 • Powered by TensorFlow & Flask</p>
+            </div>
+        </div>
+    </section>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

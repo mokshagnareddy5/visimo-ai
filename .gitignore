@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# Model files (keep only what's needed)
+emotion_model_v2.hdf5
+emotion_model_v2.tflite
+emotion_model.hdf5
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tunnel files
+tunnel_log.txt
+cert.pem
+key.pem
+
+# Dataset
+fer2013/
+fer-2013/
+*.csv
