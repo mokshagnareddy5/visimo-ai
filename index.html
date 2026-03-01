@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Private Multimodal Stress Detector (Face + Voice + Typing)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Inter, Arial, sans-serif; margin: 18px; color:#111; }
+    h1 { margin-bottom: 6px; }
+    .row { display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; }
+    .card { background:#fff; border:1px solid #e6e6e6; padding:14px; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,0.03); }
+    .card.small { width:300px; }
+    video { border-radius:8px; background:#000; }
+    textarea { width:600px; height:120px; }
+    button { padding:8px 12px; border-radius:8px; border:1px solid #ccc; background:#f7f7f7; cursor:pointer; }
+    #status { margin-top:8px; font-size:0.95rem; color:#444; }
+    .meter { height:18px; background:#eee; border-radius:9px; overflow:hidden; width:260px; }
+    .meter .fill { height:100%; background:linear-gradient(90deg,#ff8a00,#ff3b30); width:0%; transition:width 200ms ease; }
+    .labels { font-size:0.9rem; color:#333; margin-top:6px; }
+    small { color:#666; display:block; margin-top:6px; }
+    .modalities { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  </style>
+
+  <!-- MediaPipe FaceMesh (bundled) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+</head>
+<body>
+  <h1>Privacy-first Multimodal Stress Detector</h1>
+  <p><small>All processing is local. No audio/video/text is saved. Toggle sensors and press <strong>Analyze</strong> to compute a stress score (numeric features only are sent to the backend).</small></p>
+
+  <div class="row">
+    <div class="card small">
+      <h3>Camera</h3>
+      <video id="video" autoplay playsinline width="320" height="240"></video>
+      <div class="modalities">
+        <label><input id="cameraToggle" type="checkbox" checked> Camera monitoring</label>
+        <div class="labels">Face Score: <span id="faceScore">0</span></div>
+        <div class="labels">Blink Rate (per min): <span id="blinkRate">0</span></div>
+      </div>
+    </div>
+
+    <div class="card small">
+      <h3>Microphone</h3>
+      <div>
+        <button id="voiceToggle">Start voice</button>
+        <label style="margin-left:8px;"><input id="micConsent" type="checkbox" checked> Allow mic</label>
+      </div>
+      <div class="labels">Voice Score: <span id="voiceScore">0</span></div>
+      <div class="labels">Pitch (Hz): <span id="pitchHz">0</span></div>
+      <div class="labels">Speech Activity%: <span id="speechPercent">0</span></div>
+    </div>
+
+    <div class="card" style="flex:1 1 400px;">
+      <h3>Typing (in-page)</h3>
+      <textarea id="typingBox" placeholder="Type here if you want the typing signal to be included..."></textarea>
+      <div class="labels">Typing Score: <span id="typingScore">0</span></div>
+      <small>Only timing deltas are used. Actual characters are not recorded.</small>
+    </div>
+  </div>
+
+  <div style="margin-top:14px;" class="card">
+    <h3>Fusion & Result</h3>
+    <div class="row" style="align-items:center;">
+      <div>
+        <div class="meter"><div id="meterFill" class="fill"></div></div>
+        <div class="labels">Stress Score: <strong id="stressValue">0</strong></div>
+      </div>
+      <div style="margin-left:18px;">
+        <button id="analyzeBtn">Analyze</button>
+        <button id="clearBtn">Clear Buffers</button>
+      </div>
+    </div>
+    <div id="status"></div>
+    <small>Privacy: no audio/video/text stored or logged by this page. Only numeric aggregates are sent when you press Analyze.</small>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Stress & Emotion Dashboard</title>
+
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+
+<style>
+body { margin: 0; font-family: Poppins; background: #0f172a; color: #fff; }
+.container { display: grid; grid-template-columns: 1fr 1fr; height: 100vh; padding: 20px; gap: 20px; }
+.card { background: rgba(255,255,255,0.07); border-radius: 16px; padding: 20px; backdrop-filter: blur(12px); }
+#cameraBox { position: relative; width: 100%; height: 420px; border-radius: 16px; overflow: hidden; }
+video, canvas { width: 100%; height: 100%; position: absolute; border-radius: 16px; }
+textarea { width:100%; height:150px; border-radius:12px; background:rgba(255,255,255,0.15); border:none; padding:12px; color:#fff; font-size:15px; resize:none; }
+.metric-box { background:rgba(255,255,255,0.1); border-radius:12px; padding:12px; margin-top:12px; }
+.metric-title { opacity:0.7; font-size:14px; }
+.metric-value { font-size:22px; margin-top:4px; font-weight:bold; }
+button { margin-top:10px; padding:10px 15px; border-radius:10px; border:none; background:#3b82f6; color:#fff; cursor:pointer; }
+button:hover { background:#2563eb; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- CAMERA -->
+    <div class="card">
+        <h2>🎥 Live Emotion Camera</h2>
+        <div id="cameraBox">
+            <video id="video" autoplay muted></video>
+            <canvas id="overlay"></canvas>
+        </div>
+        <div id="emotionStatus" style="margin-top:10px;font-size:18px;">Emotion: Detecting...</div>
+        <div id="stressStatus" style="font-size:18px;">Stress: -- %</div>
+    </div>
+
+    <!-- JOURNAL -->
+    <div class="card">
+        <h2>📝 Journaling Stress Analyzer</h2>
+
+        <textarea id="journalInput" placeholder="Write something here..."></textarea>
+
+        <div class="metric-box">
+            <div class="metric-title">Typing Speed</div>
+            <div class="metric-value" id="typingSpeed">0 chars/sec</div>
+        </div>
+
+        <div class="metric-box">
+            <div class="metric-title">Sentiment Score</div>
+            <div class="metric-value" id="sentimentScore">0.00</div>
+        </div>
+
+        <div class="metric-box">
+            <div class="metric-title">Final Burnout Score</div>
+            <div class="metric-value" id="burnoutScore">0%</div>
+        </div>
+
+        <button id="analyzeBtn">Analyze Writing</button>
+    </div>
+
+</div>
+
+<script>
+/* ----------------- Load Models ----------------- */
+Promise.all([
+  faceapi.nets.tinyFaceDetector.loadFromUri("https://cdn.jsdelivr.net/gh/vladmandic/face-api/model/"),
+  faceapi.nets.faceExpressionNet.loadFromUri("https://cdn.jsdelivr.net/gh/vladmandic/face-api/model/")
+]).then(startCamera);
+
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+
+overlay.width = 640;
+overlay.height = 420;
+
+/* ----------------- CAMERA ----------------- */
+async function startCamera() {
+  navigator.mediaDevices.getUserMedia({ video: true })
+  .then(stream => {
+    video.srcObject = stream;
+    runDetection();
+  });
+}
+
+/* -------------- FACE / EMOTION LOOP ---------------- */
+async function runDetection() {
+  const options = new faceapi.TinyFaceDetectorOptions();
+
+  setInterval(async () => {
+    const result = await faceapi
+      .detectSingleFace(video, options)
+      .withFaceExpressions();
+
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    if (result) {
+      let box = result.detection.box;
+
+      ctx.strokeStyle = "#00ffff";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+      let expr = result.expressions;
+      let top = Object.keys(expr).reduce((a,b)=> expr[a] > expr[b] ? a : b);
+
+      document.getElementById("emotionStatus").innerText = "Emotion: " + top;
+
+      let stress = ((expr.angry + expr.sad + expr.fearful) / 3) * 100;
+      if (stress < 0) stress = 0;
+
+      document.getElementById("stressStatus").innerText = "Stress: " + stress.toFixed(1) + "%";
+    }
+
+  }, 150);
+}
+
+/* ----------------- TYPING DATA ------------------ */
+let keyTimes = [];
+let backspaceCount = 0;
+
+document.getElementById("journalInput").addEventListener("keydown", (e) => {
+  let now = performance.now();
+  keyTimes.push(now);
+
+  if (e.key === "Backspace") backspaceCount++;
+});
+
+/* ----------------- ANALYZE BUTTON ------------------ */
+document.getElementById("analyzeBtn").addEventListener("click", analyzeText);
+
+function analyzeText() {
+  let text = document.getElementById("journalInput").value.trim();
+
+  /* ---- SAFE CHECK ---- */
+  if (text.length === 0) {
+    alert("Please type something before analyzing.");
+    return;
+  }
+
+  /* ---- TYPING SPEED ---- */
+  let speed = 0;
+  if (keyTimes.length > 1) {
+    let duration = (keyTimes[keyTimes.length - 1] - keyTimes[0]) / 1000;
+    speed = text.length / duration;
+  }
+
+  document.getElementById("typingSpeed").innerText = speed.toFixed(2) + " chars/sec";
+
+  /* ---- SENTIMENT ---- */
+  let sentiment = 0;
+  const lex = {
+    happy:2, joy:2, good:1, love:3,
+    sad:-2, angry:-2, tired:-1, depressed:-3, fear:-2, anxious:-2
+  };
+
+  text.toLowerCase().split(/\s+/).forEach(w => {
+    if (lex[w]) sentiment += lex[w];
+  });
+
+  document.getElementById("sentimentScore").innerText = sentiment.toFixed(2);
+
+  /* ---- BURNOUT SCORE ---- */
+  let burnout = 0;
+
+  if (sentiment < 0) burnout += (-sentiment * 10);
+  if (speed < 1.5) burnout += 20;
+  if (backspaceCount > 8) burnout += 15;
+
+  burnout = Math.min(100, burnout);
+
+  document.getElementById("burnoutScore").innerText = burnout.toFixed(1) + "%";
+
+  /* RESET for next run */
+  keyTimes = [];
+  backspaceCount = 0;
+}
+
+</script>
+
+</body>
+</html>

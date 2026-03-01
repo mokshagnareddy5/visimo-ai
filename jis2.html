@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Stress Dashboard — Camera · Typing · Sentiment</title>
+
+<!-- Face API -->
+<script defer src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#fff; --accent:#2563EB; --danger:#dc3545; --ok:#16a34a;
+  }
+  body{font-family:Inter,Segoe UI,Arial; background:var(--bg); margin:0; padding:20px; color:#111}
+  .wrap{max-width:1150px; margin:0 auto; display:grid; grid-template-columns:640px 1fr; gap:20px; align-items:start}
+  .card{background:var(--card); border-radius:10px; padding:14px; box-shadow:0 6px 18px rgba(22,28,37,0.06)}
+  #cameraBox{position:relative; width:640px; height:480px; background:#000; overflow:hidden; border-radius:8px}
+  video{width:100%; height:100%; object-fit:cover; transform:scaleX(-1)} /* mirror */
+  canvas{position:absolute; left:0; top:0; pointer-events:none}
+  .panel{display:flex; flex-direction:column; gap:12px}
+  .metrics{display:flex; gap:10px; flex-wrap:wrap}
+  .metric{flex:1 1 45%; background:#fbfdff; border-radius:8px; padding:10px; box-shadow:inset 0 0 0 1px #eef2ff}
+  .metric h4{margin:0; font-size:12px; color:#555}
+  .metric p{margin:6px 0 0; font-size:18px; font-weight:600}
+  #journal{width:100%; min-height:100px; padding:8px; font-size:14px; border-radius:6px; border:1px solid #ddd; resize:vertical}
+  .controls{display:flex; gap:8px; align-items:center}
+  button{background:var(--accent); color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer}
+  button.secondary{background:#6b7280}
+  .small{font-size:12px;color:#666}
+  .charts{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px}
+  footer{margin-top:20px; text-align:center; color:#666; font-size:13px}
+  @media(max-width:980px){ .wrap{grid-template-columns:1fr; padding:0 6px} #cameraBox{width:100%; height:360px} .charts{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- Left: Camera -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <strong>Live Camera & Expression</strong>
+      <div class="small">Privacy: processing in browser</div>
+    </div>
+
+    <div id="cameraBox">
+      <video id="video" autoplay muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
+      <div class="small">Model status:</div>
+      <div id="modelStatus" class="small">Loading models...</div>
+      <div style="flex:1"></div>
+      <button id="toggleCam" class="secondary">Stop Cam</button>
+    </div>
+  </div>
+
+  <!-- Right: Dashboard -->
+  <div class="card panel">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong style="font-size:18px">Stress Dashboard</strong>
+      <div class="small">All on-device · opt-in</div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <h4>Expression</h4>
+        <p id="exprLabel">—</p>
+        <div class="small" id="exprConf">confidence: —</div>
+      </div>
+
+      <div class="metric">
+        <h4>Typing speed</h4>
+        <p id="typingSpeed">0.00 chars/sec</p>
+        <div class="small">avg over session</div>
+      </div>
+
+      <div class="metric">
+        <h4>Sentiment</h4>
+        <p id="sentimentVal">0.00</p>
+        <div class="small">lexicon-based</div>
+      </div>
+
+      <div class="metric">
+        <h4>Stress Score</h4>
+        <p id="stressScore" style="color:var(--danger)">0%</p>
+        <div class="small">fused signal</div>
+      </div>
+    </div>
+
+    <div style="margin-top:8px">
+      <label><strong>Journal entry</strong></label>
+      <textarea id="journal" placeholder="Write a short entry (private, stored locally)"></textarea>
+      <div class="controls" style="margin-top:8px">
+        <button id="analyzeBtn">Analyze Now</button>
+        <button id="clearBtn" class="secondary">Clear Local History</button>
+        <div style="flex:1"></div>
+        <div class="small">Entries saved localStorage (opt-out available)</div>
+      </div>
+    </div>
+
+    <div class="charts">
+      <div class="card" style="padding:8px">
+        <strong style="font-size:13px">Typing Speed (recent)</strong>
+        <canvas id="typingChart"></canvas>
+      </div>
+      <div class="card" style="padding:8px">
+        <strong style="font-size:13px">Stress Trend</strong>
+        <canvas id="stressChart"></canvas>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+      <label class="small"><input type="checkbox" id="consent" checked> I consent to local analysis</label>
+      <div style="flex:1"></div>
+      <button id="exportBtn" class="secondary">Export Summary</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Demo: early-warning stress signals (not a diagnosis). Models run in your browser. Use Live server / localhost to allow camera.
+</footer>
+
+<script>
+/* ==========================
+   CONFIG & SMALL LEXICON
+   ========================== */
+const LEXICON = {
+  happy:2, joy:2, good:1, great:2, love:3,
+  sad:-2, depressed:-3, tired:-1, angry:-2, frustrated:-2, anxious:-2, lonely:-2
+};
+const MAX_HISTORY = 200; // keep local data small
+
+/* ==========================
+   DOM ELEMENTS
+   ========================== */
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const ctx = overlay.getContext('2d');
+
+const modelStatus = document.getElementById('modelStatus');
+const toggleCamBtn = document.getElementById('toggleCam');
+
+const exprLabel = document.getElementById('exprLabel');
+const exprConf = document.getElementById('exprConf');
+const typingSpeedEl = document.getElementById('typingSpeed');
+const sentimentVal = document.getElementById('sentimentVal');
+const stressScoreEl = document.getElementById('stressScore');
+
+const journalEl = document.getElementById('journal');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const clearBtn = document.getElementById('clearBtn');
+const exportBtn = document.getElementById('exportBtn');
+const consentCheckbox = document.getElementById('consent');
+
+/* ==========================
+   STATE
+   ========================== */
+let camStream = null;
+let modelsLoaded = false;
+let running = true;
+
+let keystrokeTimes = [];
+let backspaceCount = 0;
+let pauses = [];
+let lastKeyTs = null;
+
+let typingHistory = []; // recent chars/sec values
+let stressHistory = []; // recent stress values
+let journalHistory = JSON.parse(localStorage.getItem('journal_history') || '[]');
+
+/* ==========================
+   CHARTS
+   ========================== */
+const typingChartCtx = document.getElementById('typingChart').getContext('2d');
+const stressChartCtx = document.getElementById('stressChart').getContext('2d');
+
+const typingChart = new Chart(typingChartCtx, {
+  type:'line',
+  data:{labels:[], datasets:[{label:'chars/sec', data:[], fill:true, borderColor:'#2563EB', backgroundColor:'rgba(37,99,235,0.08)'}]},
+  options:{responsive:true, animation:false, scales:{y:{beginAtZero:true}}}
+});
+const stressChart = new Chart(stressChartCtx, {
+  type:'line',
+  data:{labels:[], datasets:[{label:'stress %', data:[], fill:true, borderColor:'#dc3545', backgroundColor:'rgba(220,53,69,0.08)'}]},
+  options:{responsive:true, animation:false, scales:{y:{min:0, max:100}}}
+});
+
+/* ==========================
+   UTIL FUNCTIONS
+   ========================== */
+function addToHistory(valueArray, value, max=100){
+  valueArray.push(value);
+  if (valueArray.length > max) valueArray.shift();
+}
+function updateChart(chart, value){
+  const nowLabel = new Date().toLocaleTimeString();
+  chart.data.labels.push(nowLabel);
+  chart.data.datasets[0].data.push(value);
+  if (chart.data.labels.length > 30){
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update('none');
+}
+function saveJournalEntry(entry){
+  journalHistory.push(entry);
+  if (journalHistory.length > MAX_HISTORY) journalHistory.shift();
+  localStorage.setItem('journal_history', JSON.stringify(journalHistory));
+}
+function clearLocal(){
+  journalHistory = [];
+  localStorage.removeItem('journal_history');
+  typingHistory = [];
+  stressHistory = [];
+  typingChart.data.labels = []; typingChart.data.datasets[0].data = []; typingChart.update();
+  stressChart.data.labels = []; stressChart.data.datasets[0].data = []; stressChart.update();
+}
+
+/* ==========================
+   SENTIMENT (small lexicon)
+   ========================== */
+function computeSentiment(text){
+  const clean = text.toLowerCase().replace(/[^a-z0-9\s]/g,' ');
+  const tokens = clean.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return 0;
+  let score = 0;
+  for (const t of tokens) score += (LEXICON[t] || 0);
+  return score / Math.sqrt(tokens.length);
+}
+
+/* ==========================
+   TYPING METRICS
+   ========================== */
+journalEl.addEventListener('keydown', (ev)=>{
+  const t = performance.now();
+  keystrokeTimes.push(t);
+  if (lastKeyTs){
+    const delta = t - lastKeyTs;
+    if (delta > 2000) pauses.push(delta);
+  }
+  lastKeyTs = t;
+  if (ev.key === 'Backspace') backspaceCount++;
+});
+
+function computeTypingFeatures(){
+  const n = keystrokeTimes.length;
+  if (n < 2) return {typingSpeed:0, avgPause:0, backspaceRate:0};
+  const chars = journalEl.value.length;
+  const sessionSec = (keystrokeTimes[n-1] - keystrokeTimes[0]) / 1000 || 0.001;
+  const typingSpeed = chars / sessionSec;
+  const avgPause = pauses.length ? pauses.reduce((a,b)=>a+b)/pauses.length : 0;
+  const backspaceRate = n > 0 ? (backspaceCount / n) : 0;
+  return {typingSpeed, avgPause, backspaceRate};
+}
+
+/* ==========================
+   CAMERA + FACE API
+   ========================== */
+async function loadModels(){
+  try{
+    // Using stable CDN-hosted model files (pranavjd fork via jsdelivr)
+    const base = "https://cdn.jsdelivr.net/gh/pranavjd/face-api-models/models";
+    await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+    await faceapi.nets.faceExpressionNet.loadFromUri(base);
+    modelsLoaded = true;
+    modelStatus.textContent = "Models loaded";
+  }catch(err){
+    console.error("Model load failed:",err);
+    modelStatus.textContent = "Model load failed (see console)";
+  }
+}
+
+async function startCamera(){
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({video:true, audio:false});
+    video.srcObject = camStream;
+    await video.play();
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+    runFaceLoop();
+  }catch(e){
+    alert("Camera permission is required. Please allow camera access and reload.");
+    console.error(e);
+  }
+}
+
+toggleCamBtn.addEventListener('click', ()=>{
+  if (camStream){
+    // stop camera
+    camStream.getTracks().forEach(t=>t.stop());
+    camStream = null;
+    toggleCamBtn.textContent = "Start Cam";
+  } else {
+    startCamera();
+    toggleCamBtn.textContent = "Stop Cam";
+  }
+});
+
+/* face loop */
+async function runFaceLoop(){
+  if (!modelsLoaded) return;
+  const options = new faceapi.TinyFaceDetectorOptions({inputSize:224, scoreThreshold:0.5});
+  const loop = async ()=>{
+    if (!video || video.paused || video.ended) return;
+    const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
+    ctx.clearRect(0,0,overlay.width, overlay.height);
+    if (detection){
+      const resized = faceapi.resizeResults(detection, { width: overlay.width, height: overlay.height });
+      faceapi.draw.drawDetections(overlay, resized);
+      // expression with highest confidence
+      const expressions = detection.expressions;
+      let best = {name:'neutral', score:0};
+      Object.keys(expressions).forEach(k=>{
+        if (expressions[k] > best.score) best = {name:k, score:expressions[k]};
+      });
+      exprLabel.textContent = (best.name || '—').charAt(0).toUpperCase() + (best.name||'').slice(1);
+      exprConf.textContent = confidence: ${(best.score*100).toFixed(0)}%;
+      // compute fused stress periodically
+      computeAndRenderStress(best);
+    } else {
+      exprLabel.textContent = 'No face';
+      exprConf.textContent = 'confidence: —';
+    }
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+/* ==========================
+   FUSION & STRESS SCORING
+   ========================== */
+function computeAndRenderStress(faceExprObj){
+  // faceExprObj: {name, score} or may be undefined
+  // compute typing features
+  const {typingSpeed, avgPause, backspaceRate} = computeTypingFeatures();
+
+  // sentiment
+  const sentiment = computeSentiment(journalEl.value);
+
+  // emotion influence
+  let emotionFactor = 0; // 0..100
+  const expr = faceExprObj && faceExprObj.name ? faceExprObj.name : null;
+  const conf = faceExprObj && faceExprObj.score ? faceExprObj.score : 0;
+
+  if (expr === 'sad' || expr === 'angry' || expr === 'fearful') emotionFactor = 60 * conf;
+  else if (expr === 'neutral') emotionFactor = 15 * conf;
+  else if (expr === 'happy' || expr === 'surprised') emotionFactor = -20 * conf;
+
+  // typing factor — slower typing and long pauses increase stress
+  let typingFactor = 0;
+  if (typingSpeed < 1.5) typingFactor += 40;
+  else if (typingSpeed < 2.5) typingFactor += 20;
+  // pauses
+  if (avgPause > 3000) typingFactor += 20;
+  // backspace
+  if (backspaceRate > 0.06) typingFactor += 10;
+
+  // sentiment factor: negative increases stress
+  let sentimentFactor = 0;
+  if (sentiment < -1) sentimentFactor = 40;
+  else if (sentiment < -0.5) sentimentFactor = 20;
+  else if (sentiment > 1) sentimentFactor = -10;
+
+  // journaling frequency (if few entries recently, small boost)
+  let freqFactor = 0;
+  const now = Date.now();
+  const recentEntries = journalHistory.filter(h => now - h.t < 7*24*3600*1000).length;
+  if (recentEntries <= 1) freqFactor = 10;
+
+  // Weighted sum (normalize to 0..100)
+  const raw = (0.45*emotionFactor) + (0.3*typingFactor) + (0.2*sentimentFactor) + (0.05*freqFactor);
+  const stress = Math.max(0, Math.min(100, Math.round(raw)));
+
+  // update UI elements & charts
+  typingSpeedEl.textContent = typingSpeed.toFixed(2) + ' chars/sec';
+  sentimentVal.textContent = sentiment.toFixed(2);
+  stressScoreEl.textContent = stress + '%';
+  stressScoreEl.style.color = stress > 60 ? 'var(--danger)' : (stress > 30 ? '#d97706' : 'var(--ok)');
+
+  // push to history & charts
+  addToHistory(typingHistory, (typingSpeed || 0));
+  addToHistory(stressHistory, stress);
+  updateChart(typingChart, typingHistory[typingHistory.length-1] || 0);
+  updateChart(stressChart, stressHistory[stressHistory.length-1] || 0);
+}
+
+/* ==========================
+   ANALYZE (manual via button)
+   ========================== */
+analyzeBtn.addEventListener('click', ()=>{
+  if (!consentCheckbox.checked){
+    alert('Please consent to local analysis.');
+    return;
+  }
+
+  const text = journalEl.value.trim();
+  if (!text){
+    alert('Write something to analyze.');
+    return;
+  }
+
+  const sentiment = computeSentiment(text);
+  const ts = Date.now();
+
+  // compute features snapshot
+  const {typingSpeed, avgPause, backspaceRate} = computeTypingFeatures();
+  // save entry
+  const entry = {
+    t: ts,
+    text: '', // do NOT store full text by default to be privacy-friendly, only store derived features.
+    features: {typingSpeed, avgPause, backspaceRate, sentiment}
+  };
+  // store only metadata
+  journalHistory.push(entry);
+  if (journalHistory.length > MAX_HISTORY) journalHistory.shift();
+  localStorage.setItem('journal_history', JSON.stringify(journalHistory));
+
+  // compute a stress value without camera expression (if no camera)
+  const emotionPlaceholder = {name:'neutral', score:0.3};
+  computeAndRenderStress(emotionPlaceholder);
+  alert('Entry analyzed and saved locally (metadata only).');
+});
+
+/* ==========================
+   EXPORT SUMMARY
+   ========================== */
+exportBtn.addEventListener('click', ()=>{
+  const summary = {
+    generatedAt: new Date().toISOString(),
+    stressHistory: stressHistory.slice(-50),
+    typingHistory: typingHistory.slice(-50),
+    recentEntriesCount: journalHistory.length
+  };
+  const blob = new Blob([JSON.stringify(summary, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = stress_summary_${Date.now()}.json;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+/* ==========================
+   CLEAR DATA
+   ========================== */
+clearBtn.addEventListener('click', ()=>{
+  if (confirm('Clear all local history and charts?')){
+    clearLocal();
+    alert('Cleared local history.');
+  }
+});
+
+/* ==========================
+   BOOTSTRAP: load models + start camera
+   ========================== */
+(async ()=>{
+  await loadModels();
+  await startCamera();
+})();
+</script>
+</body>
+</html>

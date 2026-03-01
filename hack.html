@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Private Multimodal Stress Detector</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .box { padding: 20px; border: 1px solid #ddd; margin-bottom: 20px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<h1>Private Multimodal Emotion Fusion Engine</h1>
+
+<div class="box">
+    <h3>Typing Monitor</h3>
+    <textarea id="typingBox" rows="5" cols="60"></textarea>
+</div>
+
+<div class="box">
+    <h3>Facial Monitoring</h3>
+    <video id="video" width="300" height="220" autoplay></video>
+</div>
+
+<div class="box">
+    <h3>Voice Monitoring</h3>
+    <button id="startVoice">Start Voice Analysis</button>
+</div>
+
+<button onclick="sendFeatures()">Analyze Stress</button>
+
+<h2 id="result"></h2>
+
+<script src="app.js"></script>
+</body>
+</html>

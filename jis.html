@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Web Emotion + Stress Detector (Camera Access)</title>
+
+<!-- face-api.js (browser) -->
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+
+<style>
+  body { font-family: Arial, sans-serif; background:#f4f6f8; margin:0; padding:20px; text-align:center; }
+  h1 { margin-bottom:6px; }
+  #cameraBox { position:relative; width:640px; height:480px; margin:16px auto; background:#000; border-radius:8px; overflow:hidden; }
+  video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); } /* mirror */
+  canvas { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
+  .status { margin-top:8px; color:#444; }
+  .panel { max-width:640px; margin:12px auto; text-align:left; }
+  .panel p { margin:6px 0; }
+  .legend { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .legend div { padding:6px 8px; border-radius:6px; color:#111; font-weight:600; }
+  button { padding:8px 12px; border-radius:6px; background:#2563eb; color:#fff; border:none; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<h1>Web Emotion + Stress Detector</h1>
+<p class="status" id="status">Loading models — please wait...</p>
+
+<div id="cameraBox">
+  <video id="video" autoplay muted></video>
+  <canvas id="overlay"></canvas>
+</div>
+
+<div class="panel">
+  <p><strong>Detected:</strong> <span id="label">—</span></p>
+  <p><strong>Confidence:</strong> <span id="conf">—</span></p>
+  <p><strong>Stress score (custom):</strong> <span id="stress">—</span></p>
+
+  <div class="legend" id="legend">
+    <!-- legend inserted by JS -->
+  </div>
+
+  <p class="small">Tip: face the camera, good lighting, test expressions: angry / sad / fear / happy / neutral / disgust</p>
+  <p><button id="restart">Restart Camera</button></p>
+</div>
+
+<script>
+(async function(){
+  const statusEl = document.getElementById('status');
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
+  const labelEl = document.getElementById('label');
+  const confEl = document.getElementById('conf');
+  const stressEl = document.getElementById('stress');
+  const restartBtn = document.getElementById('restart');
+
+  // stable model CDN
+  const MODEL_BASE = "https://cdn.jsdelivr.net/gh/vladmandic/face-api/model/";
+
+  statusEl.innerText = 'Loading models...';
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_BASE);
+    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_BASE);
+  } catch (e) {
+    statusEl.innerText = 'Model load failed — check console';
+    console.error(e);
+    return;
+  }
+  statusEl.innerText = 'Models loaded — starting camera';
+
+  async function startCamera(){
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      await video.play();
+      // set canvas to video size
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      statusEl.innerText = 'Camera running — processing...';
+      runLoop();
+    } catch (err) {
+      statusEl.innerText = 'Camera access denied or not available.';
+      console.error(err);
+    }
+  }
+
+  // Colors (match your Python version: note keys used by face-api.js)
+  const COLORS = {
+    angry: '#ff0000',
+    disgusted: '#008000',
+    fearful: '#800080',
+    happy: '#00ff00',
+    neutral: '#ffff00',
+    sad: '#1e90ff',
+    surprised: '#00ffff',
+    stress: '#ff8c00'
+  };
+
+  // build legend
+  const legend = document.getElementById('legend');
+  Object.entries({Angry:COLORS.angry, Disgusted:COLORS.disgusted, Fearful:COLORS.fearful, Happy:COLORS.happy, Neutral:COLORS.neutral, Sad:COLORS.sad, Stress:COLORS.stress}).forEach(([name,color])=>{
+    const d = document.createElement('div');
+    d.style.background = color;
+    d.textContent = name;
+    legend.appendChild(d);
+  });
+
+  function drawBox(box, color, text){
+    ctx.lineWidth = Math.max(2, Math.round(canvas.width / 320));
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.rect(box.x, box.y, box.width, box.height);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = ${Math.max(14, Math.round(canvas.width/40))}px Arial;
+    ctx.fillText(text, box.x, Math.max(16, box.y - 6));
+  }
+
+  // custom stress rule (same as Python): average of angry/disgusted/fearful/sad
+  function computeStress(expressions){
+    // expressions keys from face-api: angry, disgusted, fearful, happy, neutral, sad, surprised
+    const a = (expressions.angry || 0);
+    const d = (expressions.disgusted || 0);
+    const f = (expressions.fearful || 0);
+    const s = (expressions.sad || 0);
+    const score = (a + d + f + s) / 4;
+    return score;
+  }
+
+  async function runLoop(){
+    const options = new faceapi.TinyFaceDetectorOptions({ inputSize:224, scoreThreshold:0.4 });
+
+    async function loop(){
+      if (video.paused || video.ended) { requestAnimationFrame(loop); return; }
+
+      const detection = await faceapi.detectSingleFace(video, options).withFaceExpressions();
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      if (detection){
+        const box = detection.detection.box;
+        const ex = detection.expressions;
+        // pick top standard emotion
+        let topEmotion = 'neutral', topScore = 0;
+        Object.keys(ex).forEach(k => { if (ex[k] > topScore) { topEmotion = k; topScore = ex[k]; }});
+
+        // compute stress
+        const stressScore = computeStress(ex);
+
+        // if stress triggered, override label
+        if (stressScore > 0.35) {
+          topEmotion = 'stress';
+          topScore = stressScore;
+        }
+
+        const color = COLORS[topEmotion] || '#ffffff';
+        const label = ${topEmotion.toUpperCase()} (${Math.round(topScore*100)}%);
+        drawBox(box, color, label);
+
+        // update side fields
+        labelEl.innerText = topEmotion.toUpperCase();
+        confEl.innerText = ${Math.round(topScore*100)}%;
+        stressEl.innerText = ${(stressScore*100).toFixed(1)}%;
+      } else {
+        labelEl.innerText = 'NO FACE';
+        confEl.innerText = '—';
+        stressEl.innerText = '—';
+      }
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  }
+
+  restartBtn.addEventListener('click', async ()=>{
+    // stop any existing stream
+    if (video.srcObject){
+      const s = video.srcObject;
+      s.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
+    await startCamera();
+  });
+
+  // start first time
+  startCamera();
+
+})();  
+</script>
+</body>
+</html>
