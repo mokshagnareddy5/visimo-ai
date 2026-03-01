@@ -1,0 +1,8 @@
+Flask
+waitress
+opencv-python
+numpy
+qrcode
+Pillow
+tensorflow-cpu
+pyngrok
